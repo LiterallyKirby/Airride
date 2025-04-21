@@ -5,11 +5,13 @@ prompt:
   - text: "{user}@{host}"
     fg: "black"
     bg: "white"
+  - text: ""
+    fg: "white"
+    bg: "blue"
   - text: "{cwd}"
     fg: "bright_white"
     bg: "blue"
-  - text: ""
+  - text: " "
     fg: "blue"
     bg: "reset"
-
 
