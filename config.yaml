@@ -1,11 +1,15 @@
 prompt:
+  - text: ""
+    fg: "white"
+    bg: "reset"
   - text: "{user}@{host}"
     fg: "black"
     bg: "white"
   - text: "{cwd}"
     fg: "bright_white"
     bg: "blue"
-  - text: " $"
-    fg: "white"
-    bg: "black"
+  - text: ""
+    fg: "blue"
+    bg: "reset"
+
 
