@@ -1,0 +1,11 @@
+prompt:
+  - text: "{user}@{host}"
+    fg: "black"
+    bg: "white"
+  - text: "{cwd}"
+    fg: "bright_white"
+    bg: "blue"
+  - text: " $"
+    fg: "white"
+    bg: "black"
+
