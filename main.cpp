@@ -10,6 +10,7 @@
 #include <iostream>
 #include <limits.h>
 #include <pwd.h>
+#include <regex>
 #include <sstream>
 #include <stdio.h>
 #include <string>
@@ -25,7 +26,11 @@ std::string currentInput;
 using namespace std;
 namespace fs = std::filesystem;
 
-void BuildTree(const fs::path &path, int depth = 0, bool isLast = false,
+int visibleLength(const std::string &str) {
+  return std::regex_replace(str, std::regex(R"(\x1b\[[0-9;]*m)"), "").length();
+}
+
+void BuildTree(const fs::path &path, int depth = 1, bool isLast = false,
                int max_depth = -1) {
   if (!fs::exists(path)) {
     std::cerr << "Path does not exist: " << path << "\n";
@@ -67,22 +72,31 @@ void BuildTree(const fs::path &path, int depth = 0, bool isLast = false,
   }
 }
 
-bool createConfigFile(const std::string &filename) {
-  std::ifstream file(filename);
-  if (file.good()) {
-    std::cout << "Config file already exists." << std::endl;
-    return false;
+void createConfigFileIfNotExist() {
+  std::filesystem::path configDir =
+      std::filesystem::path(getenv("HOME")) / ".config" / "airide";
+  std::filesystem::path configFilePath = configDir / "config.yaml";
+
+  if (!std::filesystem::exists(configDir)) {
+    std::cout << "Creating config directory: " << configDir << std::endl;
+    std::filesystem::create_directories(configDir);
   }
 
-  YAML::Node config;
-  config["setting1"] = "default_value_1";
-  config["setting2"] = "default_value_2";
-  config["setting3"] = 100;
+  if (!std::filesystem::exists(configFilePath)) {
+    std::cout << "Config file not found. Creating default config..."
+              << std::endl;
 
-  std::ofstream out(filename);
-  out << config;
-  std::cout << "Config file created with default settings." << std::endl;
-  return true;
+    YAML::Node config;
+    config["setting1"] = "default_value_1";
+    config["setting2"] = "default_value_2";
+    config["setting3"] = 100;
+
+    std::ofstream out(configFilePath);
+    out << config;
+    std::cout << "Config file created with default settings." << std::endl;
+  } else {
+    std::cout << "Config file already exists." << std::endl;
+  }
 }
 
 std::string ReplacePlaceholders(std::string prompt) {
@@ -110,17 +124,15 @@ std::string ReplacePlaceholders(std::string prompt) {
   return prompt;
 }
 
-// ✅ FIXED raw mode: Enter and Ctrl+C now work
 void setRawMode() {
   termios term;
   tcgetattr(STDIN_FILENO, &term);
-  term.c_lflag &= ~(ICANON | ECHO);     // Keep ISIG so Ctrl+C still works
-  term.c_iflag &= ~(ICRNL);             // Prevent carriage return from being translated
-  term.c_oflag |= OPOST;                // Enable post-processing
+  term.c_lflag &= ~(ICANON | ECHO);
+  term.c_iflag &= ~(ICRNL);
+  term.c_oflag |= OPOST;
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &term);
 }
 
-// ✅ Also fixes Ctrl+C not working
 void resetTerminal() {
   termios term;
   tcgetattr(STDIN_FILENO, &term);
@@ -197,7 +209,9 @@ void HandleCommands(string command) {
   }
 }
 
+size_t cursorPosition = 0;
 std::string readInput(ConfigManager &configManager) {
+  cursorPosition = 0;
   currentInput.clear();
   char ch;
   std::cout << "\033[0m";
@@ -233,6 +247,18 @@ std::string readInput(ConfigManager &configManager) {
             std::cout << currentInput;
           }
           continue;
+        case 'D':
+          if (cursorPosition > 0) {
+            cursorPosition--;
+            std::cout << "\033[1D";
+          }
+          continue;
+        case 'C':
+          if (cursorPosition < currentInput.length()) {
+            cursorPosition++;
+            std::cout << "\033[1C";
+          }
+          continue;
         default:
           continue;
         }
@@ -240,7 +266,7 @@ std::string readInput(ConfigManager &configManager) {
       continue;
     }
 
-    if (ch == '\n' || ch == '\r') { // Accept Enter key correctly
+    if (ch == '\n' || ch == '\r') {
       std::cout << "\033[0m" << std::endl;
       break;
     }
@@ -250,17 +276,22 @@ std::string readInput(ConfigManager &configManager) {
         std::cout << "\b \b";
       }
     } else if (isprint(ch)) {
-      currentInput.push_back(ch);
-      std::cout << ch;
+      currentInput.insert(cursorPosition, 1, ch);
+      cursorPosition++;
+
+      std::cout << "\r\033[2K" << configManager.getFormattedPrompt()
+                << currentInput;
+      std::cout << "\r\033["
+                << (visibleLength(configManager.getFormattedPrompt()) +
+                    cursorPosition - 6)
+                << "C";
     }
   }
-
+  cursorPosition = currentInput.length();
   return currentInput;
 }
 
-void clearLine() {
-  std::cout << "\r\033[K";
-}
+void clearLine() { std::cout << "\r\033[K"; }
 
 void reprintPrompt(const std::string &prompt) {
   clearLine();
@@ -269,13 +300,14 @@ void reprintPrompt(const std::string &prompt) {
 
 int main() {
   setRawMode();
+  std::cout << "\033[6 q"; // Set cursor to steady bar
 
-  string configFilePath = "config.yaml";
-  if (!createConfigFile(configFilePath)) {
-    std::cout << "Using existing config file." << std::endl;
-  }
+  // Ensure config file is created
+  createConfigFileIfNotExist();
 
-  ConfigManager configManager(configFilePath);
+  std::string homeDir = std::getenv("HOME");
+  std::filesystem::path configPath = homeDir + "/.config/airide/config.yaml";
+  ConfigManager configManager(configPath);
 
   while (true) {
     std::cout << configManager.getFormattedPrompt();
